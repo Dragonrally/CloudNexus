@@ -1,8 +1,12 @@
 ﻿import React, { useState, useEffect, useRef } from "react";
 
+// ==========================================
+// 1. CONFIGURATION & CONSTANTS
+// ==========================================
 const SERVER_CONFIG = {
   publicKey: "olmL/38VvzEfbbemSRdgiU2eAy67lD15awZvakxlRXU=",
   endpoint: "201.79.39.236:51820",
+  telemetryEndpoint: "http://201.79.39.236:5050/api/peers",
   dns: "1.1.1.1, 1.0.0.1",
   mtu: "1360",
   keepalive: "25",
@@ -33,6 +37,9 @@ const SOLID_COLORS = [
   { name: "Pure Black (Bleed Check)", hex: "#000000", border: "border-slate-700", text: "text-slate-400", span: true },
 ];
 
+// ==========================================
+// 2. WIREGUARD PROVISIONING VIEW
+// ==========================================
 function WireguardEnrollmentView() {
   const [deviceType, setDeviceType] = useState("pc");
   const [octet, setOctet] = useState(DEFAULT_PROFILES.pc.defaultOctet);
@@ -235,6 +242,9 @@ PersistentKeepalive = ${SERVER_CONFIG.keepalive}`;
   );
 }
 
+// ==========================================
+// 3. HARDWARE DIAGNOSTICS VIEW
+// ==========================================
 function DiagnosticsView() {
   const [activeTab, setActiveTab] = useState("camera");
 
@@ -555,50 +565,161 @@ function DiagnosticsView() {
   );
 }
 
-function AdminDashboardView() {
+// ==========================================
+// 4. ADMIN DASHBOARD WITH LIVE TELEMETRY
+// ==========================================
+function AdminDashboardView({ passphrase }) {
+  const [peers, setPeers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  const fetchPeers = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(SERVER_CONFIG.telemetryEndpoint, {
+        headers: { "x-api-key": passphrase || "Secret1234" },
+      });
+      if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.statusText}`);
+      const data = await res.json();
+      setPeers(data.peers || []);
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch (err) {
+      setError(
+        `Failed to reach telemetry daemon: ${err.message}. Confirm port 5050 is open on hermes-nexus and wg-telemetry service is active.`
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPeers();
+    const interval = setInterval(fetchPeers, 10000); // Poll every 10 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <div className="w-full max-w-3xl rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8 text-left text-slate-200">
-      <div className="border-b border-slate-800 pb-4">
-        <h2 className="text-xl font-bold tracking-tight text-white m-0">Admin Management Operations</h2>
-        <p className="text-xs text-slate-400 mt-1 m-0">
-          Core node status and operational telemetry for Cloud Nexus infrastructure.
+    <div className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8 text-left text-slate-200">
+      <div className="border-b border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-white m-0">Admin Telemetry & Live Peers</h2>
+          <p className="text-xs text-slate-400 mt-1 m-0">
+            Node: <span className="font-mono text-cyan-400">hermes-nexus</span> (201.79.39.236)
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {lastUpdated && (
+            <span className="text-[11px] font-mono text-slate-500">Updated: {lastUpdated}</span>
+          )}
+          <button
+            type="button"
+            onClick={fetchPeers}
+            disabled={loading}
+            className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition"
+          >
+            {loading ? "Refreshing..." : "↻ Refresh"}
+          </button>
+        </div>
+      </div>
+
+      {/* Node Metrics Cards */}
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5">
+          <div className="text-[10px] text-slate-500 font-mono">NODE HOST</div>
+          <div className="text-sm font-bold text-white mt-0.5">hermes-nexus</div>
+          <div className="text-xs text-cyan-400 font-mono mt-0.5">201.79.39.236</div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5">
+          <div className="text-[10px] text-slate-500 font-mono">PORTAL DEPLOYMENT</div>
+          <div className="text-sm font-bold text-white mt-0.5">Render Cloud</div>
+          <div className="text-xs text-emerald-400 font-mono mt-0.5">Service: Active</div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5">
+          <div className="text-[10px] text-slate-500 font-mono">WIREGUARD MESH</div>
+          <div className="text-sm font-bold text-white mt-0.5">10.8.0.0/24</div>
+          <div className="text-xs text-slate-400 font-mono mt-0.5">Gateway: 10.8.0.1</div>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/30 p-3 text-xs text-rose-300">
+          {error}
+        </div>
+      )}
+
+      {/* Live Peer Telemetry Table */}
+      <div className="mt-6">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-white m-0">Live Registered Peers</h3>
+          <span className="text-[11px] font-mono text-cyan-400">{peers.length} Peers In Kernel</span>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+          <table className="w-full text-left text-xs font-mono">
+            <thead className="border-b border-slate-800 bg-slate-900/60 text-slate-400">
+              <tr>
+                <th className="p-3">Status</th>
+                <th className="p-3">Assigned IP</th>
+                <th className="p-3">Public Key</th>
+                <th className="p-3">Last Handshake</th>
+                <th className="p-3 text-right">Transfer (Rx / Tx)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60">
+              {peers.length === 0 && !loading && (
+                <tr>
+                  <td colSpan="5" className="p-5 text-center text-slate-500 font-sans">
+                    No connected peers reported or telemetry daemon offline.
+                  </td>
+                </tr>
+              )}
+              {peers.map((peer) => (
+                <tr key={peer.publicKey} className="hover:bg-slate-900/30">
+                  <td className="p-3">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-sans font-bold ${
+                        peer.isActive
+                          ? "bg-emerald-950/80 text-emerald-400 border border-emerald-500/30"
+                          : "bg-slate-900 text-slate-500 border border-slate-800"
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          peer.isActive ? "bg-emerald-400 animate-pulse" : "bg-slate-600"
+                        }`}
+                      />
+                      {peer.isActive ? "ONLINE" : "IDLE"}
+                    </span>
+                  </td>
+                  <td className="p-3 font-bold text-cyan-300">{peer.allowedIps}</td>
+                  <td className="p-3 text-slate-400 truncate max-w-[140px]" title={peer.publicKey}>
+                    {peer.publicKey.slice(0, 10)}...{peer.publicKey.slice(-4)}
+                  </td>
+                  <td className="p-3 text-slate-300">{peer.latestHandshake}</td>
+                  <td className="p-3 text-right text-slate-400">
+                    {peer.rxMB} MB ↓ / {peer.txMB} MB ↑
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="mt-6 border-t border-slate-800 pt-4">
+        <p className="text-[11px] text-slate-500 m-0">
+          Telemetry daemon running on <span className="font-mono text-slate-400">port 5050</span> on node hermes-nexus via systemd (<span className="font-mono text-slate-400">wg-telemetry.service</span>).
         </p>
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-          <div className="text-[10px] text-slate-500 font-mono">PRIMARY NODE</div>
-          <div className="text-sm font-bold text-white mt-1">hermes-nexus</div>
-          <div className="text-xs text-cyan-400 font-mono mt-1">201.79.39.236</div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-          <div className="text-[10px] text-slate-500 font-mono">PORTAL HOST</div>
-          <div className="text-sm font-bold text-white mt-1">Render Cloud</div>
-          <div className="text-xs text-emerald-400 font-mono mt-1">Status: Active</div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-          <div className="text-[10px] text-slate-500 font-mono">TUNNEL SUBNET</div>
-          <div className="text-sm font-bold text-white mt-1">10.8.0.0/24</div>
-          <div className="text-xs text-slate-400 font-mono mt-1">Gateway: 10.8.0.1</div>
-        </div>
-      </div>
-
-      <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950 p-5">
-        <h3 className="text-sm font-semibold text-white m-0 mb-2">Quick Reference Commands</h3>
-        <p className="text-xs text-slate-400 mb-3">Run on hermes-nexus via SSH to inspect tunnel routing:</p>
-        <div className="space-y-2">
-          <pre className="rounded-lg border border-slate-800 bg-slate-900/60 p-2.5 font-mono text-xs text-slate-300">
-            sudo wg show wg0
-          </pre>
-          <pre className="rounded-lg border border-slate-800 bg-slate-900/60 p-2.5 font-mono text-xs text-slate-300">
-            sudo wg-allow-pc 11
-          </pre>
-        </div>
       </div>
     </div>
   );
 }
 
+// ==========================================
+// 5. ROOT APPLICATION
+// ==========================================
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passphrase, setPassphrase] = useState("");
@@ -623,6 +744,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-white">
+      {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -685,6 +807,7 @@ export default function App() {
         </div>
       </header>
 
+      {/* Main Content */}
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 md:p-8">
         {activeTab === "diagnostics" && <DiagnosticsView />}
 
@@ -727,7 +850,7 @@ export default function App() {
           ) : (
             <div className="w-full flex justify-center">
               {activeTab === "enrollment" && <WireguardEnrollmentView />}
-              {activeTab === "admin" && <AdminDashboardView />}
+              {activeTab === "admin" && <AdminDashboardView passphrase={passphrase} />}
             </div>
           )
         )}

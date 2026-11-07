@@ -122,6 +122,7 @@ function AdminDashboardView() {
     </div>
   );
 }
+}
 
 
 
