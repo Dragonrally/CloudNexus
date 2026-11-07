@@ -1,248 +1,237 @@
 import React, { useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
 
-// ==========================================
-// HARDCODED WIREGUARD SERVER INFRASTRUCTURE
-// ==========================================
-const SERVER_ENDPOINT = "201.79.39.236:51820";
-const SERVER_PUBLIC_KEY = "olmL/38VvzEfbbemSRdgiU2eAy67lD15awZvakxlRXU=";
-const DNS_SERVERS = "1.1.1.1, 1.0.0.1";
+const SERVER_CONFIG = {
+  publicKey: "olmL/38VvzEfbbemSRdgiU2eAy67lD15awZvakxlRXU=",
+  endpoint: "201.79.39.236:51820",
+  dns: "1.1.1.1, 1.0.0.1",
+  mtu: "1360",
+  keepalive: "25",
+};
 
-// Hardcoded private keys by device profile
-// Replace these strings with your exact 44-character keys from /etc/wireguard/
-const DEVICE_PROFILES = {
-  phone: {
-    name: "Mobile Phone",
-    defaultOctet: "3",
-    privateKey: "8Fbp72mox9WvmWGSqOHJzi459Waz/UtglXruTrw3RUs="
-  },
+const DEFAULT_PROFILES = {
   pc: {
-    name: "Workstation / PC",
-    defaultOctet: "2",
-    privateKey: "+HLSr8lisGx7SVFCyIlCEul6HHNDUkRoJN8UiM965mo="
+    id: "pc",
+    name: "Workstation (PC)",
+    icon: "💻",
+    defaultOctet: "11",
+    publicKey: "m/74BKrjQs0wol5nUUf4dRzpNcW9x/Z+UGZlGFzQlno=",
+    privateKey: "",
+  },
+  phone: {
+    id: "phone",
+    name: "Mobile Device (Phone)",
+    icon: "📱",
+    defaultOctet: "20",
+    publicKey: "",
+    privateKey: "",
   },
 };
 
-// Strict sanitization: strips quotes, line breaks, and whitespace
-const sanitizeKey = (key) => (key || "").replace(/['"\r\n\s]/g, "").trim();
-
 export default function WireguardEnrollment() {
-  const [deviceType, setDeviceType] = useState("phone");
-  const [subnetBase, setSubnetBase] = useState("10.8.0");
-  const [hostOctet, setHostOctet] = useState(DEVICE_PROFILES["phone"].defaultOctet);
-  const [copied, setCopied] = useState(false);
+  const [deviceType, setDeviceType] = useState("pc");
+  const [octet, setOctet] = useState(DEFAULT_PROFILES.pc.defaultOctet);
+  const [privateKey, setPrivateKey] = useState("");
+  const [customPublicKey, setCustomPublicKey] = useState(DEFAULT_PROFILES.pc.publicKey);
+  const [copiedConf, setCopiedConf] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState(false);
 
-  const activeProfile = DEVICE_PROFILES[deviceType];
-  const clientIp = `${subnetBase.trim()}.${hostOctet.trim()}`;
-  
-  // Cleaned keys
-  const cleanPrivateKey = sanitizeKey(activeProfile.privateKey);
-  const cleanServerPubKey = sanitizeKey(SERVER_PUBLIC_KEY);
+  const activeProfile = DEFAULT_PROFILES[deviceType];
+  const assignedIp = `10.8.0.${octet}`;
 
-  // Verification check: WireGuard keys are exactly 44 base64 characters
-  const isKeyValid = cleanPrivateKey.length === 44 && cleanServerPubKey.length === 44;
-
-  // Exact WireGuard config string format
-  const configContent = `[Interface]
-PrivateKey = ${cleanPrivateKey}
-Address = ${clientIp}/32
-DNS = ${DNS_SERVERS}
+  // Build the bulletproof client configuration
+  const clientConfig = `[Interface]
+PrivateKey = ${privateKey.trim() || "GP+xQk1ypZRjAyC3PEzVDWO5UzByxkTMVk2UeiYxrGo="}
+Address = ${assignedIp}/32
+DNS = ${SERVER_CONFIG.dns}
+MTU = ${SERVER_CONFIG.mtu}
 
 [Peer]
-PublicKey = ${cleanServerPubKey}
-Endpoint = ${SERVER_ENDPOINT}
+PublicKey = ${SERVER_CONFIG.publicKey}
+Endpoint = ${SERVER_CONFIG.endpoint}
 AllowedIPs = 0.0.0.0/0, ::/0
-PersistentKeepalive = 25\n`;
+PersistentKeepalive = ${SERVER_CONFIG.keepalive}`;
 
-  const handleDeviceChange = (type) => {
+  // Build the corresponding server hot-allow command
+  const effectivePubKey = customPublicKey.trim() || "<PEER_PUBLIC_KEY>";
+  const serverAllowCmd = `sudo wg set wg0 peer "${effectivePubKey}" allowed-ips ${assignedIp}/32`;
+
+  const handleDeviceSwitch = (type) => {
     setDeviceType(type);
-    setHostOctet(DEVICE_PROFILES[type].defaultOctet);
+    setOctet(DEFAULT_PROFILES[type].defaultOctet);
+    setCustomPublicKey(DEFAULT_PROFILES[type].publicKey);
+    setCopiedConf(false);
+    setCopiedCmd(false);
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(configContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
+  const handleCopyConfig = () => {
+    navigator.clipboard.writeText(clientConfig);
+    setCopiedConf(true);
+    setTimeout(() => setCopiedConf(false), 2500);
   };
 
-  const handleDownload = () => {
-    const blob = new Blob([configContent], { type: "text/plain" });
+  const handleCopyCommand = () => {
+    navigator.clipboard.writeText(serverAllowCmd);
+    setCopiedCmd(true);
+    setTimeout(() => setCopiedCmd(false), 2500);
+  };
+
+  const handleDownloadConf = () => {
+    const blob = new Blob([clientConfig], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `wg0-${deviceType}-${clientIp.replace(/\./g, "_")}.conf`;
+    link.download = `${deviceType}-${octet}.conf`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="w-full max-w-3xl rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-2xl backdrop-blur-xl sm:p-8 text-left">
+    <div className="w-full max-w-3xl rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8 text-left text-slate-200">
+      {/* Header */}
       <div className="border-b border-slate-800 pb-4">
-        <h2 className="text-xl font-bold tracking-tight text-white m-0">
-          Device Enrollment & Peer Provisioning
-        </h2>
+        <h2 className="text-xl font-bold tracking-tight text-white m-0">WireGuard Peer Provisioning</h2>
         <p className="text-xs text-slate-400 mt-1 m-0">
-          Node: <span className="font-mono text-cyan-400">hermes-nexus</span> &bull; {SERVER_ENDPOINT}
+          Target Node: <span className="font-mono text-cyan-400">hermes-nexus</span> (201.79.39.236:51820)
         </p>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-8 md:grid-cols-2 items-center">
-        {/* Left Side: Device Selection & IP Configuration */}
-        <div className="space-y-5">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-              Select Device Preset
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleDeviceChange("phone")}
-                className={`rounded-xl border py-2.5 px-3 text-xs font-semibold transition ${
-                  deviceType === "phone"
-                    ? "border-cyan-500 bg-cyan-950/70 text-cyan-300 shadow-md"
-                    : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:text-slate-200"
-                }`}
-              >
-                📱 Mobile Phone
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDeviceChange("pc")}
-                className={`rounded-xl border py-2.5 px-3 text-xs font-semibold transition ${
-                  deviceType === "pc"
-                    ? "border-cyan-500 bg-cyan-950/70 text-cyan-300 shadow-md"
-                    : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:text-slate-200"
-                }`}
-              >
-                💻 Workstation / PC
-              </button>
-            </div>
-          </div>
-
-          {/* Target IP Selector */}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400">
-                Target IP Allocation
-              </label>
-              <span className="font-mono text-[10px] text-slate-500">Subnet: /32</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className="flex flex-1 items-center rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs">
-                <input
-                  type="text"
-                  value={subnetBase}
-                  onChange={(e) => setSubnetBase(e.target.value)}
-                  className="w-20 bg-transparent text-slate-300 outline-none"
-                  placeholder="10.8.0"
-                />
-                <span className="text-slate-500 font-bold">.</span>
-                <input
-                  type="number"
-                  min="2"
-                  max="254"
-                  value={hostOctet}
-                  onChange={(e) => setHostOctet(e.target.value)}
-                  className="w-16 bg-transparent text-cyan-400 font-bold outline-none px-1"
-                />
+      {/* Device Preset Selector */}
+      <div className="mt-5">
+        <label className="text-xs font-semibold text-slate-300 block mb-2">Device Preset</label>
+        <div className="grid grid-cols-2 gap-3">
+          {Object.values(DEFAULT_PROFILES).map((prof) => (
+            <button
+              key={prof.id}
+              type="button"
+              onClick={() => handleDeviceSwitch(prof.id)}
+              className={`flex items-center gap-3 rounded-xl border p-3.5 text-left transition ${
+                deviceType === prof.id
+                  ? "border-cyan-500 bg-cyan-950/40 text-white shadow-sm"
+                  : "border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+              }`}
+            >
+              <span className="text-2xl">{prof.icon}</span>
+              <div>
+                <div className="text-xs font-semibold">{prof.name}</div>
+                <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                  Default Subnet: 10.8.0.{prof.defaultOctet}
+                </div>
               </div>
+            </button>
+          ))}
+        </div>
+      </div>
 
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const prev = Math.max(2, parseInt(hostOctet || "2", 10) - 1);
-                    setHostOctet(prev.toString());
-                  }}
-                  className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-2 text-xs font-bold text-slate-300 hover:bg-slate-700"
-                >
-                  -1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = Math.min(254, parseInt(hostOctet || "2", 10) + 1);
-                    setHostOctet(next.toString());
-                  }}
-                  className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-2 text-xs font-bold text-slate-300 hover:bg-slate-700"
-                >
-                  +1
-                </button>
-              </div>
+      {/* Target IP Octet Allocation */}
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs font-semibold text-slate-300 block mb-2">Assigned Tunnel IP</label>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs font-mono text-slate-400 w-full">
+              <span>10.8.0.</span>
+              <input
+                type="number"
+                min="2"
+                max="254"
+                value={octet}
+                onChange={(e) => setOctet(e.target.value)}
+                className="w-16 bg-transparent text-white font-bold outline-none pl-1"
+              />
+              <span>/32</span>
             </div>
 
-            <div className="flex items-center gap-1.5 flex-wrap pt-1">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase">Quick Pick:</span>
-              {["2", "3", "4", "5", "10", "20", "50"].map((ip) => (
+            <div className="flex gap-1">
+              {["2", "11", "15", "20"].map((num) => (
                 <button
-                  key={ip}
+                  key={num}
                   type="button"
-                  onClick={() => setHostOctet(ip)}
-                  className={`rounded border px-2 py-0.5 text-[10px] font-mono transition ${
-                    hostOctet === ip
-                      ? "border-cyan-500 bg-cyan-950 text-cyan-300 font-bold"
-                      : "border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                  onClick={() => setOctet(num)}
+                  className={`rounded-lg px-2.5 py-2 text-xs font-mono transition ${
+                    octet === num
+                      ? "bg-cyan-600 text-white font-bold"
+                      : "bg-slate-800 text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  .{ip}
+                  .{num}
                 </button>
               ))}
             </div>
           </div>
+        </div>
 
-          <div className="flex gap-3">
+        {/* Optional Private Key Injection */}
+        <div>
+          <label className="text-xs font-semibold text-slate-300 block mb-2">
+            Device Private Key <span className="text-slate-500 font-normal">(Optional)</span>
+          </label>
+          <input
+            type="password"
+            placeholder="Paste 44-char base64 private key"
+            value={privateKey}
+            onChange={(e) => setPrivateKey(e.target.value)}
+            className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2 text-xs font-mono text-white placeholder-slate-600 outline-none focus:border-cyan-500 transition"
+          />
+        </div>
+      </div>
+
+      {/* Client Configuration Block */}
+      <div className="mt-6">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-slate-300">
+            Client Profile: <span className="font-mono text-cyan-400">{assignedIp}/32</span>
+          </span>
+          <div className="flex gap-2">
             <button
-              onClick={handleCopy}
-              className="flex-1 rounded-xl bg-cyan-600 py-2.5 text-xs font-semibold text-white shadow-md transition hover:bg-cyan-500"
+              type="button"
+              onClick={handleDownloadConf}
+              className="rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1 text-xs font-medium text-slate-300 hover:bg-slate-700 transition"
             >
-              {copied ? "Copied Config!" : "Copy Configuration"}
+              📥 Download .conf
             </button>
             <button
-              onClick={handleDownload}
-              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:bg-slate-700 hover:text-white"
+              type="button"
+              onClick={handleCopyConfig}
+              className="rounded-lg border border-cyan-500/40 bg-cyan-950/60 px-3 py-1 text-xs font-medium text-cyan-300 hover:bg-cyan-900/60 transition"
             >
-              Download .conf
+              {copiedConf ? "✓ Copied" : "Copy Config"}
             </button>
           </div>
         </div>
 
-        {/* Right Side: QR Code Scanner with Diagnostic Guard */}
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-800/80 bg-slate-950/70 p-6 text-center">
-          <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-3 py-1 text-xs font-mono text-emerald-300">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            {activeProfile.name}: {clientIp}
-          </div>
+        <pre className="rounded-xl border border-slate-800 bg-slate-950 p-4 font-mono text-xs text-cyan-300/90 overflow-x-auto leading-relaxed select-all">
+          {clientConfig}
+        </pre>
+      </div>
 
-          <div className="rounded-2xl border-4 border-slate-800 bg-white p-3.5 shadow-2xl">
-            {isKeyValid ? (
-              <QRCodeSVG
-                value={configContent}
-                size={185}
-                level="M"
-                includeMargin={false}
-              />
-            ) : (
-              <div className="w-[185px] h-[185px] flex flex-col items-center justify-center p-3 text-center bg-slate-100 text-rose-600 font-sans text-xs">
-                <span className="font-bold">Invalid Key Length</span>
-                <span className="text-[10px] text-slate-600 mt-1">
-                  PrivateKey length: {cleanPrivateKey.length} / 44 chars
-                </span>
-                <span className="text-[10px] text-slate-600">
-                  PublicKey length: {cleanServerPubKey.length} / 44 chars
-                </span>
-              </div>
-            )}
-          </div>
-
-          <p className="mt-4 text-xs leading-relaxed text-slate-400 max-w-[220px]">
-            {isKeyValid ? (
-              <>Scan with the <strong>WireGuard</strong> mobile app to provision as <code className="text-cyan-400">{clientIp}</code>.</>
-            ) : (
-              <span className="text-rose-400 text-xs font-medium">Check character count in VS Code.</span>
-            )}
-          </p>
+      {/* Matching Server-Side Kernel Allow Command */}
+      <div className="mt-6 border-t border-slate-800 pt-5">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-slate-300">Server Authorization 1-Liner</span>
+          <button
+            type="button"
+            onClick={handleCopyCommand}
+            className="rounded-lg border border-emerald-500/40 bg-emerald-950/50 px-3 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-900/50 transition"
+          >
+            {copiedCmd ? "✓ Copied Command" : "Copy Command"}
+          </button>
         </div>
+
+        <div className="mb-2">
+          <input
+            type="text"
+            value={customPublicKey}
+            onChange={(e) => setCustomPublicKey(e.target.value)}
+            placeholder="Peer Public Key for Server Command"
+            className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-mono text-slate-400 placeholder-slate-600 outline-none focus:border-cyan-500"
+          />
+        </div>
+
+        <pre className="rounded-xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs text-emerald-400 overflow-x-auto select-all">
+          {serverAllowCmd}
+        </pre>
+        <p className="text-[11px] text-slate-500 mt-2 m-0">
+          Run this command on <span className="font-mono text-slate-400">hermes-nexus</span> to live-bind the peer key directly into the running kernel table.
+        </p>
       </div>
     </div>
   );
