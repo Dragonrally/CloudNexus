@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import AdminDashboard from "./components/AdminDashboard";
+import WireguardEnrollment from "./components/WireguardEnrollment";
 
 export default function App() {
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
