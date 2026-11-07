@@ -1,8 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from "react";
 
-// ==========================================
-// 1. CONFIGURATION & CONSTANTS
-// ==========================================
 const SERVER_CONFIG = {
   publicKey: "olmL/38VvzEfbbemSRdgiU2eAy67lD15awZvakxlRXU=",
   endpoint: "201.79.39.236:51820",
@@ -37,9 +34,8 @@ const SOLID_COLORS = [
   { name: "Pure Black (Bleed Check)", hex: "#000000", border: "border-slate-700", text: "text-slate-400", span: true },
 ];
 
-// ==========================================
-// 2. WIREGUARD PROVISIONING VIEW
-// ==========================================
+const DEFAULT_FALLBACK_PASS = import.meta.env.VITE_ADMIN_PASSPHRASE || "Secret1234";
+
 function WireguardEnrollmentView() {
   const [deviceType, setDeviceType] = useState("pc");
   const [octet, setOctet] = useState(DEFAULT_PROFILES.pc.defaultOctet);
@@ -242,9 +238,6 @@ PersistentKeepalive = ${SERVER_CONFIG.keepalive}`;
   );
 }
 
-// ==========================================
-// 3. HARDWARE DIAGNOSTICS VIEW
-// ==========================================
 function DiagnosticsView() {
   const [activeTab, setActiveTab] = useState("camera");
 
@@ -565,21 +558,21 @@ function DiagnosticsView() {
   );
 }
 
-// ==========================================
-// 4. ADMIN DASHBOARD WITH LIVE TELEMETRY
-// ==========================================
-function AdminDashboardView({ passphrase }) {
+function AdminDashboardView({ currentPassphrase, onUpdatePassphrase }) {
   const [peers, setPeers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
+
+  const [newPass, setNewPass] = useState("");
+  const [passStatus, setPassStatus] = useState("");
 
   const fetchPeers = async () => {
     setLoading(true);
     setError("");
     try {
       const res = await fetch(SERVER_CONFIG.telemetryEndpoint, {
-        headers: { "x-api-key": passphrase || "Secret1234" },
+        headers: { "x-api-key": currentPassphrase },
       });
       if (!res.ok) throw new Error(`HTTP Error ${res.status}: ${res.statusText}`);
       const data = await res.json();
@@ -596,9 +589,21 @@ function AdminDashboardView({ passphrase }) {
 
   useEffect(() => {
     fetchPeers();
-    const interval = setInterval(fetchPeers, 10000); // Poll every 10 seconds
+    const interval = setInterval(fetchPeers, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentPassphrase]);
+
+  const handlePasswordSave = (e) => {
+    e.preventDefault();
+    if (!newPass || newPass.trim().length < 6) {
+      setPassStatus("Password must be at least 6 characters.");
+      return;
+    }
+    onUpdatePassphrase(newPass.trim());
+    setPassStatus("Password updated and saved to persistent browser storage.");
+    setNewPass("");
+    setTimeout(() => setPassStatus(""), 4000);
+  };
 
   return (
     <div className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8 text-left text-slate-200">
@@ -624,7 +629,6 @@ function AdminDashboardView({ passphrase }) {
         </div>
       </div>
 
-      {/* Node Metrics Cards */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5">
           <div className="text-[10px] text-slate-500 font-mono">NODE HOST</div>
@@ -649,7 +653,6 @@ function AdminDashboardView({ passphrase }) {
         </div>
       )}
 
-      {/* Live Peer Telemetry Table */}
       <div className="mt-6">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold text-white m-0">Live Registered Peers</h3>
@@ -708,28 +711,52 @@ function AdminDashboardView({ passphrase }) {
         </div>
       </div>
 
-      <div className="mt-6 border-t border-slate-800 pt-4">
-        <p className="text-[11px] text-slate-500 m-0">
-          Telemetry daemon running on <span className="font-mono text-slate-400">port 5050</span> on node hermes-nexus via systemd (<span className="font-mono text-slate-400">wg-telemetry.service</span>).
+      <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950 p-5">
+        <h3 className="text-sm font-semibold text-white mb-1">Administrative Credentials</h3>
+        <p className="text-xs text-slate-400 mb-3">
+          Change portal passphrase. Persists in this browser across code builds and Render deployments.
         </p>
+
+        <form onSubmit={handlePasswordSave} className="flex flex-col sm:flex-row gap-2 max-w-md">
+          <input
+            type="text"
+            placeholder="New Master Passphrase"
+            value={newPass}
+            onChange={(e) => setNewPass(e.target.value)}
+            className="flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-mono text-white placeholder-slate-600 outline-none focus:border-cyan-500"
+          />
+          <button
+            type="submit"
+            className="rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-cyan-500 transition"
+          >
+            Update Passphrase
+          </button>
+        </form>
+
+        {passStatus && (
+          <p className="text-[11px] text-cyan-400 font-mono mt-2 m-0">{passStatus}</p>
+        )}
       </div>
     </div>
   );
 }
 
-// ==========================================
-// 5. ROOT APPLICATION
-// ==========================================
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [passphrase, setPassphrase] = useState("");
+  const [adminPassphrase, setAdminPassphrase] = useState(() => {
+    return localStorage.getItem("cn_admin_passphrase") || DEFAULT_FALLBACK_PASS;
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return sessionStorage.getItem("cn_auth_active") === "true";
+  });
+  const [passphraseInput, setPassphraseInput] = useState("");
   const [authError, setAuthError] = useState(false);
   const [activeTab, setActiveTab] = useState("diagnostics");
 
   const handleLogin = (e) => {
     e.preventDefault();
-    if (passphrase === "Secret1234") {
+    if (passphraseInput === adminPassphrase) {
       setIsAuthenticated(true);
+      sessionStorage.setItem("cn_auth_active", "true");
       setAuthError(false);
     } else {
       setAuthError(true);
@@ -738,13 +765,18 @@ export default function App() {
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    setPassphrase("");
+    sessionStorage.removeItem("cn_auth_active");
+    setPassphraseInput("");
     setActiveTab("diagnostics");
+  };
+
+  const updatePassphrase = (newPassword) => {
+    setAdminPassphrase(newPassword);
+    localStorage.setItem("cn_admin_passphrase", newPassword);
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-white">
-      {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -807,7 +839,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 md:p-8">
         {activeTab === "diagnostics" && <DiagnosticsView />}
 
@@ -827,8 +858,8 @@ export default function App() {
                   <input
                     type="password"
                     placeholder="Master Passphrase"
-                    value={passphrase}
-                    onChange={(e) => setPassphrase(e.target.value)}
+                    value={passphraseInput}
+                    onChange={(e) => setPassphraseInput(e.target.value)}
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-cyan-500 transition"
                     autoFocus
                   />
@@ -850,7 +881,12 @@ export default function App() {
           ) : (
             <div className="w-full flex justify-center">
               {activeTab === "enrollment" && <WireguardEnrollmentView />}
-              {activeTab === "admin" && <AdminDashboardView passphrase={passphrase} />}
+              {activeTab === "admin" && (
+                <AdminDashboardView
+                  currentPassphrase={adminPassphrase}
+                  onUpdatePassphrase={updatePassphrase}
+                />
+              )}
             </div>
           )
         )}
