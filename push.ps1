@@ -1,5 +1,4 @@
-﻿# Ensure sensitive patterns are ignored
-$sensitivePatterns = @(".env*", "*.conf", "*.key", "keys/", "*secret*", "*.pem")
+﻿$sensitivePatterns = @(".env*", "*.conf", "*.key", "keys/", "*secret*", "*.pem")
 if (-not (Test-Path ".gitignore")) {
     New-Item -ItemType File -Name ".gitignore" | Out-Null
 }
