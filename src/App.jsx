@@ -16,6 +16,7 @@ const DEFAULT_PROFILES = {
     icon: "💻",
     defaultOctet: "11",
     publicKey: "m/74BKrjQs0wol5nUUf4dRzpNcW9x/Z+UGZlGFzQlno=",
+    privateKey: "8NhjqYU0f0o/wriZe0Wcnt+SKCO3cxNuntelFEDeU0Q=",
   },
   phone: {
     id: "phone",
@@ -23,6 +24,7 @@ const DEFAULT_PROFILES = {
     icon: "📱",
     defaultOctet: "20",
     publicKey: "",
+    privateKey: "8Fbp72mox9WvmWGSqOHJzi459Waz/UtglXruTrw3RUs=",
   },
 };
 
@@ -39,7 +41,7 @@ const DEFAULT_FALLBACK_PASS = import.meta.env.VITE_ADMIN_PASSPHRASE || "Secret12
 function WireguardEnrollmentView() {
   const [deviceType, setDeviceType] = useState("pc");
   const [octet, setOctet] = useState(DEFAULT_PROFILES.pc.defaultOctet);
-  const [privateKey, setPrivateKey] = useState("");
+  const [privateKey, setPrivateKey] = useState(DEFAULT_PROFILES.pc.privateKey);
   const [customPublicKey, setCustomPublicKey] = useState(DEFAULT_PROFILES.pc.publicKey);
   const [copiedConf, setCopiedConf] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState(false);
@@ -65,6 +67,7 @@ PersistentKeepalive = ${SERVER_CONFIG.keepalive}`;
   const handleDeviceSwitch = (type) => {
     setDeviceType(type);
     setOctet(DEFAULT_PROFILES[type].defaultOctet);
+    setPrivateKey(DEFAULT_PROFILES[type].privateKey);
     setCustomPublicKey(DEFAULT_PROFILES[type].publicKey);
     setCopiedConf(false);
     setCopiedCmd(false);
@@ -164,9 +167,7 @@ PersistentKeepalive = ${SERVER_CONFIG.keepalive}`;
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-slate-300 block mb-2">
-            Device Private Key <span className="text-slate-500 font-normal">(Optional)</span>
-          </label>
+          <label className="text-xs font-semibold text-slate-300 block mb-2">Device Private Key</label>
           <input
             type="password"
             placeholder="Paste 44-char base64 private key"
@@ -230,9 +231,6 @@ PersistentKeepalive = ${SERVER_CONFIG.keepalive}`;
         <pre className="rounded-xl border border-slate-800 bg-slate-950 p-3 font-mono text-xs text-emerald-400 overflow-x-auto select-all">
           {serverAllowCmd}
         </pre>
-        <p className="text-[11px] text-slate-500 mt-2 m-0">
-          Run this on <span className="font-mono text-slate-400">hermes-nexus</span> to live-bind the peer key directly into the kernel.
-        </p>
       </div>
     </div>
   );
@@ -240,7 +238,6 @@ PersistentKeepalive = ${SERVER_CONFIG.keepalive}`;
 
 function DiagnosticsView() {
   const [activeTab, setActiveTab] = useState("camera");
-
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const videoRef = useRef(null);
@@ -257,10 +254,7 @@ function DiagnosticsView() {
 
   const stopCamera = () => {
     if (cameraStreamRef.current) {
-      cameraStreamRef.current.getTracks().forEach((t) => {
-        t.stop();
-        t.enabled = false;
-      });
+      cameraStreamRef.current.getTracks().forEach((t) => t.stop());
       cameraStreamRef.current = null;
     }
     if (videoRef.current) {
@@ -280,7 +274,6 @@ function DiagnosticsView() {
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
         audio: false,
       });
-
       cameraStreamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -288,7 +281,7 @@ function DiagnosticsView() {
       }
       setCameraActive(true);
     } catch (err) {
-      setCameraError(err.message || "Failed to access webcam. Check browser permissions.");
+      setCameraError(err.message || "Failed to access webcam.");
       setCameraActive(false);
     }
   };
@@ -299,16 +292,11 @@ function DiagnosticsView() {
       animFrameRef.current = null;
     }
     if (audioContextRef.current) {
-      try {
-        audioContextRef.current.close();
-      } catch (e) {}
+      try { audioContextRef.current.close(); } catch (e) {}
       audioContextRef.current = null;
     }
     if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach((t) => {
-        t.stop();
-        t.enabled = false;
-      });
+      micStreamRef.current.getTracks().forEach((t) => t.stop());
       micStreamRef.current = null;
     }
     setVolume(0);
@@ -327,9 +315,7 @@ function DiagnosticsView() {
 
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       const ctx = new AudioCtx();
-      if (ctx.state === "suspended") {
-        await ctx.resume();
-      }
+      if (ctx.state === "suspended") await ctx.resume();
       audioContextRef.current = ctx;
 
       const analyser = ctx.createAnalyser();
@@ -340,23 +326,19 @@ function DiagnosticsView() {
       source.connect(analyser);
 
       const buffer = new Uint8Array(analyser.frequencyBinCount);
-
       const trackLevel = () => {
-        if (!analyser) return;
         analyser.getByteFrequencyData(buffer);
         let max = 0;
         for (let i = 0; i < buffer.length; i++) {
           if (buffer[i] > max) max = buffer[i];
         }
-        const pct = Math.min(100, Math.round((max / 255) * 100));
-        setVolume(pct);
+        setVolume(Math.min(100, Math.round((max / 255) * 100)));
         animFrameRef.current = requestAnimationFrame(trackLevel);
       };
-
       trackLevel();
       setMicActive(true);
     } catch (err) {
-      setMicError(err.message || "Failed to access microphone. Check browser permissions.");
+      setMicError(err.message || "Failed to access microphone.");
       setMicActive(false);
     }
   };
@@ -384,7 +366,7 @@ function DiagnosticsView() {
           className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
             activeTab === "camera"
               ? "border border-cyan-500/50 bg-cyan-950/70 text-cyan-300"
-              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+              : "text-slate-400 hover:text-slate-200"
           }`}
         >
           📷 Camera Test
@@ -395,7 +377,7 @@ function DiagnosticsView() {
           className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
             activeTab === "mic"
               ? "border border-cyan-500/50 bg-cyan-950/70 text-cyan-300"
-              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+              : "text-slate-400 hover:text-slate-200"
           }`}
         >
           🎙️ Microphone Test
@@ -406,7 +388,7 @@ function DiagnosticsView() {
           className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
             activeTab === "display"
               ? "border border-cyan-500/50 bg-cyan-950/70 text-cyan-300"
-              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+              : "text-slate-400 hover:text-slate-200"
           }`}
         >
           🖥️ Screen & Pixels
@@ -476,19 +458,11 @@ function DiagnosticsView() {
             <div className="h-4 w-full overflow-hidden rounded-full bg-slate-900 border border-slate-800 p-0.5">
               <div
                 className={`h-full rounded-full transition-all duration-75 ${
-                  volume > 70
-                    ? "bg-rose-500"
-                    : volume > 30
-                    ? "bg-amber-400"
-                    : "bg-emerald-400"
+                  volume > 70 ? "bg-rose-500" : volume > 30 ? "bg-amber-400" : "bg-emerald-400"
                 }`}
                 style={{ width: `${volume}%` }}
               />
             </div>
-
-            <p className="text-[11px] text-slate-400 m-0">
-              Speak into your microphone. If the signal bar responds, the audio driver and permissions are functional.
-            </p>
           </div>
 
           {micError && (
@@ -522,11 +496,7 @@ function DiagnosticsView() {
       {activeTab === "display" && (
         <div className="mt-6 space-y-4">
           <div className="rounded-xl border border-slate-800 bg-slate-950 p-5 space-y-3">
-            <h3 className="text-sm font-semibold text-white m-0">Dead Pixel & Backlight Screening</h3>
-            <p className="text-xs text-slate-400 m-0 leading-relaxed">
-              Select a color below to take over the viewport. Look for stuck or dead subpixels. Click anywhere to exit.
-            </p>
-
+            <h3 className="text-sm font-semibold text-white m-0">Dead Pixel Screening</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
               {SOLID_COLORS.map((c) => (
                 <button
@@ -549,7 +519,7 @@ function DiagnosticsView() {
           style={{ backgroundColor: activeColor }}
           className="fixed inset-0 z-50 flex items-center justify-center cursor-pointer select-none"
         >
-          <span className="rounded-full bg-black/75 px-4 py-2 text-xs font-mono text-white backdrop-blur shadow opacity-60 hover:opacity-100 transition">
+          <span className="rounded-full bg-black/75 px-4 py-2 text-xs font-mono text-white backdrop-blur shadow">
             Click anywhere to exit inspection
           </span>
         </div>
@@ -563,7 +533,6 @@ function AdminDashboardView({ currentPassphrase, onUpdatePassphrase }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
-
   const [newPass, setNewPass] = useState("");
   const [passStatus, setPassStatus] = useState("");
 
@@ -579,9 +548,7 @@ function AdminDashboardView({ currentPassphrase, onUpdatePassphrase }) {
       setPeers(data.peers || []);
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (err) {
-      setError(
-        `Failed to reach telemetry daemon: ${err.message}. Confirm port 5050 is open on hermes-nexus and wg-telemetry service is active.`
-      );
+      setError(`Failed to reach telemetry daemon: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -600,7 +567,7 @@ function AdminDashboardView({ currentPassphrase, onUpdatePassphrase }) {
       return;
     }
     onUpdatePassphrase(newPass.trim());
-    setPassStatus("Password updated and saved to persistent browser storage.");
+    setPassStatus("Password updated and saved locally.");
     setNewPass("");
     setTimeout(() => setPassStatus(""), 4000);
   };
@@ -629,24 +596,6 @@ function AdminDashboardView({ currentPassphrase, onUpdatePassphrase }) {
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5">
-          <div className="text-[10px] text-slate-500 font-mono">NODE HOST</div>
-          <div className="text-sm font-bold text-white mt-0.5">hermes-nexus</div>
-          <div className="text-xs text-cyan-400 font-mono mt-0.5">201.79.39.236</div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5">
-          <div className="text-[10px] text-slate-500 font-mono">PORTAL DEPLOYMENT</div>
-          <div className="text-sm font-bold text-white mt-0.5">Render Cloud</div>
-          <div className="text-xs text-emerald-400 font-mono mt-0.5">Service: Active</div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5">
-          <div className="text-[10px] text-slate-500 font-mono">WIREGUARD MESH</div>
-          <div className="text-sm font-bold text-white mt-0.5">10.8.0.0/24</div>
-          <div className="text-xs text-slate-400 font-mono mt-0.5">Gateway: 10.8.0.1</div>
-        </div>
-      </div>
-
       {error && (
         <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/30 p-3 text-xs text-rose-300">
           {error}
@@ -654,11 +603,6 @@ function AdminDashboardView({ currentPassphrase, onUpdatePassphrase }) {
       )}
 
       <div className="mt-6">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-white m-0">Live Registered Peers</h3>
-          <span className="text-[11px] font-mono text-cyan-400">{peers.length} Peers In Kernel</span>
-        </div>
-
         <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
           <table className="w-full text-left text-xs font-mono">
             <thead className="border-b border-slate-800 bg-slate-900/60 text-slate-400">
@@ -667,7 +611,7 @@ function AdminDashboardView({ currentPassphrase, onUpdatePassphrase }) {
                 <th className="p-3">Assigned IP</th>
                 <th className="p-3">Public Key</th>
                 <th className="p-3">Last Handshake</th>
-                <th className="p-3 text-right">Transfer (Rx / Tx)</th>
+                <th className="p-3 text-right">Transfer</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -688,11 +632,7 @@ function AdminDashboardView({ currentPassphrase, onUpdatePassphrase }) {
                           : "bg-slate-900 text-slate-500 border border-slate-800"
                       }`}
                     >
-                      <span
-                        className={`h-1.5 w-1.5 rounded-full ${
-                          peer.isActive ? "bg-emerald-400 animate-pulse" : "bg-slate-600"
-                        }`}
-                      />
+                      <span className={`h-1.5 w-1.5 rounded-full ${peer.isActive ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
                       {peer.isActive ? "ONLINE" : "IDLE"}
                     </span>
                   </td>
@@ -714,7 +654,7 @@ function AdminDashboardView({ currentPassphrase, onUpdatePassphrase }) {
       <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950 p-5">
         <h3 className="text-sm font-semibold text-white mb-1">Administrative Credentials</h3>
         <p className="text-xs text-slate-400 mb-3">
-          Change portal passphrase. Persists in this browser across code builds and Render deployments.
+          Change portal passphrase. Persists in this browser across code builds.
         </p>
 
         <form onSubmit={handlePasswordSave} className="flex flex-col sm:flex-row gap-2 max-w-md">
