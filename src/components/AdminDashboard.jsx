@@ -16,6 +16,121 @@ export default function AdminDashboard({ adminPassword, setAdminPassword, onLock
     }
   };
 
+
+   
+
+function AdminDashboardView() {
+  const [peers, setPeers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchPeers = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("http://201.79.39.236:5050/api/peers", {
+        headers: { "x-api-key": "Secret1234" },
+      });
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      const data = await res.json();
+      setPeers(data.peers || []);
+    } catch (err) {
+      setError("Unable to reach telemetry daemon on hermes-nexus (check port 5050 & service status).");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPeers();
+    const interval = setInterval(fetchPeers, 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8 text-left text-slate-200">
+      <div className="border-b border-slate-800 pb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-white m-0">Admin Telemetry & Live Peers</h2>
+          <p className="text-xs text-slate-400 mt-1 m-0">
+            Node: <span className="font-mono text-cyan-400">hermes-nexus</span> (201.79.39.236)
+          </p>
+        </div>
+        <button
+          onClick={fetchPeers}
+          disabled={loading}
+          className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition"
+        >
+          {loading ? "Refreshing..." : "↻ Refresh"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/30 p-3 text-xs text-rose-300">
+          {error}
+        </div>
+      )}
+
+      {/* Live Peers Table */}
+      <div className="mt-6">
+        <h3 className="text-sm font-semibold text-white mb-3">Active Kernel Peers</h3>
+        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+          <table className="w-full text-left text-xs font-mono">
+            <thead className="border-b border-slate-800 bg-slate-900/50 text-slate-400">
+              <tr>
+                <th className="p-3">Status</th>
+                <th className="p-3">Assigned IP</th>
+                <th className="p-3">Public Key</th>
+                <th className="p-3">Handshake</th>
+                <th className="p-3 text-right">Transfer (Rx / Tx)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60">
+              {peers.length === 0 && !loading && (
+                <tr>
+                  <td colSpan="5" className="p-4 text-center text-slate-500">
+                    No active peers returned or daemon offline.
+                  </td>
+                </tr>
+              )}
+              {peers.map((p) => (
+                <tr key={p.publicKey} className="hover:bg-slate-900/30">
+                  <td className="p-3">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-sans font-bold ${
+                      p.isActive
+                        ? "bg-emerald-950/80 text-emerald-400 border border-emerald-500/30"
+                        : "bg-slate-900 text-slate-500 border border-slate-800"
+                    }`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${p.isActive ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
+                      {p.isActive ? "ONLINE" : "IDLE"}
+                    </span>
+                  </td>
+                  <td className="p-3 font-bold text-cyan-300">{p.allowedIps}</td>
+                  <td className="p-3 text-slate-400 truncate max-w-[140px]" title={p.publicKey}>
+                    {p.publicKey.slice(0, 10)}...{p.publicKey.slice(-4)}
+                  </td>
+                  <td className="p-3 text-slate-300">{p.latestHandshake}</td>
+                  <td className="p-3 text-right text-slate-400">
+                    {p.rxMB} MB ↓ / {p.txMB} MB ↑
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+
+
+
+
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6 font-sans flex flex-col items-center">
       {/* Top Application Bar */}
